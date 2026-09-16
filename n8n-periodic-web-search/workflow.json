@@ -1,0 +1,767 @@
+{
+  "name": "Periodic Web Search (multi-engine, keyword logic, markdown log)",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Periodic Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1120,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Search Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -900,
+        0
+      ],
+      "notes": "Edit keywordGroups / engines / outputFile / resultsPerQuery here.",
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "keywordGroups",
+              "type": "string",
+              "value": "[{\"name\": \"AI Regulation EU\", \"all\": [\"artificial intelligence\", \"regulation\"], \"any\": [\"EU\", \"European Union\", \"Brussels\"], \"none\": [\"cryptocurrency\"]}, {\"name\": \"Quantum Computing Breakthroughs\", \"all\": [\"quantum computing\"], \"any\": [\"breakthrough\", \"milestone\", \"record\"], \"none\": []}]"
+            },
+            {
+              "id": "a2",
+              "name": "engines",
+              "type": "string",
+              "value": "google,bing,brave,duckduckgo"
+            },
+            {
+              "id": "a3",
+              "name": "outputFile",
+              "type": "string",
+              "value": "/data/n8n/web-search-log.md"
+            },
+            {
+              "id": "a4",
+              "name": "resultsPerQuery",
+              "type": "number",
+              "value": 10
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Build Query Matrix",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $input.first().json;\n\nconst keywordGroups = typeof cfg.keywordGroups === 'string'\n  ? JSON.parse(cfg.keywordGroups)\n  : cfg.keywordGroups;\n\nconst engines = (typeof cfg.engines === 'string' ? cfg.engines.split(',') : cfg.engines)\n  .map((e) => e.trim().toLowerCase())\n  .filter(Boolean);\n\nfunction quote(term) {\n  return term.includes(' ') ? `\"${term}\"` : term;\n}\n\n// Builds a query string using the operators most search engines share:\n// space = AND, (a OR b) = OR, -term = NOT.\nfunction buildQuery(group) {\n  const all = (group.all || []).map(quote).join(' ');\n  const any = (group.any || []).map(quote);\n  const anyPart = any.length ? `(${any.join(' OR ')})` : '';\n  const none = (group.none || []).map((t) => `-${quote(t)}`).join(' ');\n  return [all, anyPart, none].filter(Boolean).join(' ').trim();\n}\n\nconst items = [];\nfor (const group of keywordGroups) {\n  const query = buildQuery(group);\n  for (const engine of engines) {\n    items.push({\n      json: {\n        engine,\n        keywordGroup: group.name,\n        query,\n        resultsPerQuery: cfg.resultsPerQuery || 10,\n      },\n    });\n  }\n}\n\nreturn items;\n"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Route By Engine",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -460,
+        0
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "outputKey": "google",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.engine}}",
+                    "rightValue": "google",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true
+            },
+            {
+              "outputKey": "bing",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.engine}}",
+                    "rightValue": "bing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true
+            },
+            {
+              "outputKey": "brave",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.engine}}",
+                    "rightValue": "brave",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true
+            },
+            {
+              "outputKey": "duckduckgo",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.engine}}",
+                    "rightValue": "duckduckgo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Google Custom Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        -320
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/customsearch/v1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GOOGLE_CSE_API_KEY }}"
+            },
+            {
+              "name": "cx",
+              "value": "={{ $env.GOOGLE_CSE_CX }}"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "num",
+              "value": "={{ $json.resultsPerQuery }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Bing Web Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.bing.microsoft.com/v7.0/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "count",
+              "value": "={{ $json.resultsPerQuery }}"
+            },
+            {
+              "name": "mkt",
+              "value": "en-US"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Ocp-Apim-Subscription-Key",
+              "value": "={{ $env.BING_SEARCH_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Brave Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        120
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "count",
+              "value": "={{ $json.resultsPerQuery }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Subscription-Token",
+              "value": "={{ $env.BRAVE_SEARCH_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n8",
+      "name": "DuckDuckGo HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        340
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "No API key needed, but it scrapes DuckDuckGo's HTML results page - best-effort, may need selector updates if DDG changes its markup.",
+      "parameters": {
+        "method": "GET",
+        "url": "https://html.duckduckgo.com/html/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; PeriodicWebSearchBot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Normalize Google Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        -320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst output = [];\n\nitems.forEach((item, idx) => {\n  const meta = $('Build Query Matrix').itemMatching(idx).json;\n  const results = item.json.items || [];\n  for (const r of results) {\n    output.push({\n      json: {\n        engine: 'google',\n        keywordGroup: meta.keywordGroup,\n        query: meta.query,\n        title: r.title || '',\n        link: r.link || '',\n        snippet: r.snippet || '',\n      },\n    });\n  }\n});\n\nreturn output;\n"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Normalize Bing Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst output = [];\n\nitems.forEach((item, idx) => {\n  const meta = $('Build Query Matrix').itemMatching(idx).json;\n  const results = (item.json.webPages && item.json.webPages.value) || [];\n  for (const r of results) {\n    output.push({\n      json: {\n        engine: 'bing',\n        keywordGroup: meta.keywordGroup,\n        query: meta.query,\n        title: r.name || '',\n        link: r.url || '',\n        snippet: r.snippet || '',\n      },\n    });\n  }\n});\n\nreturn output;\n"
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Normalize Brave Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst output = [];\n\nitems.forEach((item, idx) => {\n  const meta = $('Build Query Matrix').itemMatching(idx).json;\n  const results = (item.json.web && item.json.web.results) || [];\n  for (const r of results) {\n    output.push({\n      json: {\n        engine: 'brave',\n        keywordGroup: meta.keywordGroup,\n        query: meta.query,\n        title: r.title || '',\n        link: r.url || '',\n        snippet: r.description || '',\n      },\n    });\n  }\n});\n\nreturn output;\n"
+      }
+    },
+    {
+      "id": "n12",
+      "name": "Extract DuckDuckGo Fields",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1.2,
+      "position": [
+        20,
+        340
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "sourceData": "json",
+        "dataPropertyName": "data",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title",
+              "cssSelector": ".result__a",
+              "returnArray": true
+            },
+            {
+              "key": "link",
+              "cssSelector": ".result__a",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "snippet",
+              "cssSelector": ".result__snippet",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n13",
+      "name": "Normalize DuckDuckGo Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        340
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The \"Extract DuckDuckGo Fields\" node returns one item per query, each\n// holding parallel arrays (title[], link[], snippet[]) pulled from the\n// result HTML. This node zips them into one flat result per hit and\n// resolves DuckDuckGo's redirect links (/l/?uddg=<encoded-url>) back to\n// the real target URL.\nconst items = $input.all();\nconst output = [];\n\nitems.forEach((item, idx) => {\n  const meta = $('Build Query Matrix').itemMatching(idx).json;\n  const titles = item.json.title || [];\n  const links = item.json.link || [];\n  const snippets = item.json.snippet || [];\n  const count = Math.max(titles.length, links.length);\n\n  for (let i = 0; i < count; i++) {\n    const rawLink = links[i] || '';\n    let link = rawLink;\n    try {\n      const u = new URL(rawLink, 'https://duckduckgo.com');\n      const uddg = u.searchParams.get('uddg');\n      if (uddg) link = decodeURIComponent(uddg);\n    } catch (e) {\n      // keep rawLink as-is if it doesn't parse\n    }\n    output.push({\n      json: {\n        engine: 'duckduckgo',\n        keywordGroup: meta.keywordGroup,\n        query: meta.query,\n        title: (titles[i] || '').trim(),\n        link,\n        snippet: (snippets[i] || '').trim(),\n      },\n    });\n  }\n});\n\nreturn output;\n"
+      }
+    },
+    {
+      "id": "n14",
+      "name": "Merge All Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        500,
+        0
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 4
+      }
+    },
+    {
+      "id": "n15",
+      "name": "Timestamp Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const now = new Date();\nconst pad = (n) => String(n).padStart(2, '0');\nconst date = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}`;\nconst time = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;\n\nreturn $input.all().map((item) => ({\n  json: {\n    ...item.json,\n    date,\n    time,\n  },\n}));\n"
+      }
+    },
+    {
+      "id": "n16",
+      "name": "Dedupe & Append To File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Reads the markdown log (if it exists), drops any result whose URL is\n// already logged, appends the genuinely new ones, and writes the file\n// back. Requires the n8n process to allow the 'fs' and 'path' built-ins\n// (NODE_FUNCTION_ALLOW_BUILTIN=fs,path) since this runs in the Code node.\nconst fs = require('fs');\nconst path = require('path');\n\nconst outputFile = $('Search Configuration').first().json.outputFile;\n\nfs.mkdirSync(path.dirname(outputFile), { recursive: true });\n\nlet existingContent = '';\nif (fs.existsSync(outputFile)) {\n  existingContent = fs.readFileSync(outputFile, 'utf8');\n}\n\nfunction normalizeUrl(u) {\n  try {\n    const url = new URL(u);\n    url.hash = '';\n    [...url.searchParams.keys()]\n      .filter((k) => k.toLowerCase().startsWith('utm_'))\n      .forEach((k) => url.searchParams.delete(k));\n    let s = url.toString();\n    if (s.endsWith('/')) s = s.slice(0, -1);\n    return s.toLowerCase();\n  } catch (e) {\n    return (u || '').trim().toLowerCase();\n  }\n}\n\nconst seen = new Set();\nconst linkLineRegex = /-\\s*\\*\\*Link:\\*\\*\\s*\\[[^\\]]*\\]\\(([^)]+)\\)/g;\nlet m;\nwhile ((m = linkLineRegex.exec(existingContent)) !== null) {\n  seen.add(normalizeUrl(m[1]));\n}\n\nconst newEntries = [];\nfor (const item of $input.all()) {\n  const r = item.json;\n  if (!r.link) continue;\n  const key = normalizeUrl(r.link);\n  if (seen.has(key)) continue;\n  seen.add(key);\n  newEntries.push(r);\n}\n\nfunction escapeMd(text) {\n  return (text || '').replace(/\\r?\\n/g, ' ').trim();\n}\n\nconst blocks = newEntries.map((r) => {\n  const title = escapeMd(r.title) || r.link;\n  return [\n    `### ${title}`,\n    `- **Date:** ${r.date}`,\n    `- **Time:** ${r.time}`,\n    `- **Matched keywords:** ${r.keywordGroup}`,\n    `- **Search engine:** ${r.engine}`,\n    `- **Link:** [${title}](${r.link})`,\n    `- **Lead:** ${escapeMd(r.snippet) || '_no summary available_'}`,\n    '',\n    '---',\n    '',\n  ].join('\\n') + '\\n';\n});\n\nif (blocks.length) {\n  const header = existingContent.trim().length === 0 ? '# Web Search Log\\n\\n' : '';\n  fs.appendFileSync(outputFile, header + blocks.join(''));\n}\n\nreturn [\n  {\n    json: {\n      newResultsCount: newEntries.length,\n      totalFetched: $input.all().length,\n      outputFile,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "n17",
+      "name": "Has New Results?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1160,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.newResultsCount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n18",
+      "name": "New Results Logged",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        -100
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n19",
+      "name": "No New Results",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        100
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Periodic Trigger": {
+      "main": [
+        [
+          {
+            "node": "Search Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Configuration": {
+      "main": [
+        [
+          {
+            "node": "Build Query Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Query Matrix": {
+      "main": [
+        [
+          {
+            "node": "Route By Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Engine": {
+      "main": [
+        [
+          {
+            "node": "Google Custom Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bing Web Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Brave Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DuckDuckGo HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Custom Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize Google Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bing Web Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize Bing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize Brave Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DuckDuckGo HTML": {
+      "main": [
+        [
+          {
+            "node": "Extract DuckDuckGo Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract DuckDuckGo Fields": {
+      "main": [
+        [
+          {
+            "node": "Normalize DuckDuckGo Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Google Results": {
+      "main": [
+        [
+          {
+            "node": "Merge All Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Bing Results": {
+      "main": [
+        [
+          {
+            "node": "Merge All Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalize Brave Results": {
+      "main": [
+        [
+          {
+            "node": "Merge All Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Normalize DuckDuckGo Results": {
+      "main": [
+        [
+          {
+            "node": "Merge All Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge All Results": {
+      "main": [
+        [
+          {
+            "node": "Timestamp Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Timestamp Results": {
+      "main": [
+        [
+          {
+            "node": "Dedupe & Append To File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe & Append To File": {
+      "main": [
+        [
+          {
+            "node": "Has New Results?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Results?": {
+      "main": [
+        [
+          {
+            "node": "New Results Logged",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
